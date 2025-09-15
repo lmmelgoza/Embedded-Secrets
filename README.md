@@ -20,7 +20,7 @@ History: Save extraction/embedding results (via Firestore or your DB of choice).
 
 Tech Stack
 
-Frontend: React (TypeScript recommended)
+Frontend: React
 
 Backend: Python FastAPI (image I/O, stego, crypto)
 
