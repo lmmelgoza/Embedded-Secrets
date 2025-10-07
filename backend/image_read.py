@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import io
 import json 
-from typing import Any, Dict, Iterable
+import hashlib
+from typing import Any, Dict, Iterable, List
 from PIL import Image, ExifTags
 import xml.dom.minidom as minidom
 try:
@@ -43,6 +44,141 @@ def _make_json_serializable(obj):
         return [_make_json_serializable(v) for v in obj]
     return obj
 
+def _compute_hashes(data: bytes) -> Dict[str, Any]:
+    """Return sha256 and md5 and size for given bytes."""
+    h_sha256 = hashlib.sha256(data).hexdigest()
+    h_md5 = hashlib.md5(data).hexdigest()
+    return {"sha256": h_sha256, "md5": h_md5, "size": len(data)}
+
+def _raw_header_bytes(data: bytes, n: int = 64) -> str:
+    return data[:n].hex()
+
+def _find_trailing_after_eoi(data: bytes) -> Dict[str, Any]:
+    """Return bytes after EOI marker (0xFFD9) if any."""
+    pos = data.rfind(b"\xFF\xD9")
+    if pos == -1:
+        return {"eoi_pos": None, "trailing_bytes": len(data)}
+    trailing = len(data) - (pos + 2)
+    return {"eoi_pos": pos, "trailing_bytes": trailing}
+
+def _marker_name(byte_val: int) -> str:
+    NAMES = {
+        0xD8: "SOI", 0xD9: "EOI",
+        0xDA: "SOS", 0xDB: "DQT", 0xC4: "DHT",
+        0xC0: "SOF0", 0xC1: "SOF1", 0xC2: "SOF2",
+        0xC3: "SOF3", 0xC5: "SOF5", 0xC6: "SOF6", 0xC7: "SOF7",
+        0xC9: "SOF9", 0xCA: "SOF10", 0xCB: "SOF11",
+        0xE0: "APP0", 0xE1: "APP1", 0xE2: "APP2", 0xEB: "APP11", 0xED: "APP13",
+        0xEE: "APP14", 0xFE: "COM", 0xDD: "DRI"
+    }
+    if 0xE0 <= byte_val <= 0xEF:
+        return f"APP{byte_val - 0xE0}"
+    return NAMES.get(byte_val, f"0xFF{byte_val:02X}")
+
+def parse_jpeg_markers_full(data: bytes) -> List[Dict[str, Any]]:
+    """
+    Scan full JPEG markers and return ordered list of markers with offsets, lengths, and some parsed details:
+    - SOF: height, width, precision, components, sampling factors
+    - DQT: include hash of quant table bytes for fingerprinting
+    - DHT/DQT/DRI presence and sizes
+    - COM: text preview
+    """
+    markers = []
+    L = len(data)
+    if L < 2 or data[:2] != b'\xFF\xD8':
+        return markers
+    i = 2
+    # record SOI
+    markers.append({"name": "SOI", "marker": 0xD8, "offset": 0, "length": 2})
+    while i < L:
+        if data[i] != 0xFF:
+            i = data.find(b"\xFF", i)
+            if i == -1:
+                break
+        # skip fill 0xFF bytes
+        j = i
+        while j < L and data[j] == 0xFF:
+            j += 1
+        if j >= L:
+            break
+        marker = data[j]
+        offset = j - 1
+        j += 1
+        # markers without length
+        if marker in (0xD8, 0xD9) or (0xD0 <= marker <= 0xD7):
+            continue
+        # stop scanning APP segments once we hit SOS (rest is compressed image data)
+        if marker == 0xDA:
+            break
+        if j + 2 > L:
+            break
+        seg_len = int.from_bytes(data[j:j+2], "big")
+        payload_len = max(seg_len - 2, 0)
+        payload_start = j + 2
+        payload_end = payload_start + payload_len
+        if payload_end > L:
+            payload_end = L
+        payload = data[payload_start:payload_end]
+        entry = {"name": _marker_name(marker), "marker": marker, "offset": offset, "length": 2 + seg_len, "payload_length": payload_len}
+        # parse specifics
+        try:
+            if marker in (0xC0, 0xC1, 0xC2):  # SOF0/1/2
+                # payload: precision (1), height (2), width (2), components (1), then per-component (3 bytes)
+                if len(payload) >= 6:
+                    precision = payload[0]
+                    height = int.from_bytes(payload[1:3], "big")
+                    width = int.from_bytes(payload[3:5], "big")
+                    components = payload[5]
+                    comps = []
+                    idx = 6
+                    for n in range(components):
+                        if idx + 3 <= len(payload):
+                            cid = payload[idx]
+                            samp = payload[idx+1]
+                            qtbl = payload[idx+2]
+                            h = (samp >> 4) & 0xF
+                            v = samp & 0xF
+                            comps.append({"id": cid, "h": h, "v": v, "qt": qtbl})
+                            idx += 3
+                    entry["sof"] = {"precision": precision, "width": width, "height": height, "components": components, "component_info": comps}
+            elif marker == 0xDB:  # DQT
+                # store hash of the quant table payload for fingerprinting
+                entry["dqt_md5"] = hashlib.md5(payload).hexdigest()
+                entry["dqt_len"] = len(payload)
+            elif marker == 0xC4:  # DHT
+                entry["dht_len"] = len(payload)
+                entry["dht_md5"] = hashlib.md5(payload).hexdigest()
+            elif marker == 0xDD:  # DRI
+                if len(payload) >= 2:
+                    restart_interval = int.from_bytes(payload[:2], "big")
+                    entry["restart_interval"] = restart_interval
+            elif marker == 0xFE:  # COM
+                try:
+                    entry["comment_text"] = payload.decode("utf-8", "replace")
+                except Exception:
+                    entry["comment_preview"] = _bytes_to_printable(payload, 128)
+            elif 0xE0 <= marker <= 0xEF:
+                # APPn: keep small preview and common signatures
+                try:
+                    entry["payload_head_preview"] = _bytes_to_printable(payload[:128], 128)
+                except Exception:
+                    pass
+                if marker == 0xE1 and payload.startswith(b"Exif\x00\x00"):
+                    entry["app_type"] = "EXIF"
+                if marker == 0xE1 and (b"<x:xmpmeta" in payload or b"http://ns.adobe.com/xap/1.0/" in payload):
+                    entry["app_type"] = entry.get("app_type", "") + " XMP"
+                if marker == 0xE2 and payload.startswith(b"MPF"):
+                    entry["app_type"] = "MPF"
+                if marker == 0xED and payload.startswith(b"Photoshop 3.0"):
+                    entry["app_type"] = "Photoshop-IRB"
+                if marker == 0xEB and (b"JUMBF" in payload or b"c2pa" in payload.lower()):
+                    entry["app_type"] = "JUMBF/C2PA"
+        except Exception:
+            pass
+        markers.append(entry)
+        i = payload_end
+    return markers
+
 def parse_jpeg_app_segments(data: bytes, wanted=(1,2,11,13), keep_payload: bool = False):
     """
     Return dict of APP segments requested (keys like 'APP1', 'APP2', ...).
@@ -71,6 +207,9 @@ def parse_jpeg_app_segments(data: bytes, wanted=(1,2,11,13), keep_payload: bool 
         # markers without length
         if marker in (0xD8, 0xD9) or (0xD0 <= marker <= 0xD7):
             continue
+        # stop scanning APP segments once we hit SOS (rest is compressed image data)
+        if marker == 0xDA:
+            break
         if i + 2 > L:
             break
         seg_len = int.from_bytes(data[i:i+2], "big")
@@ -172,10 +311,22 @@ def _try_decode_app_payload(payload_hex: str, app_num: int):
 
 def read_image_from_bytes(img_bytes: bytes) -> Dict[str, Any]:
     meta: Dict[str, Any] = {}
+    # file-level hashes & mime
+    meta["file"] = _compute_hashes(img_bytes)
+    meta["raw_header_hex"] = _raw_header_bytes(img_bytes, 128)
+    # (mime_guess removed — we rely on marker/APP0 parsing instead)
+
+    # trailing bytes after EOI
+    trailing_info = _find_trailing_after_eoi(img_bytes)
+    meta["trailing"] = trailing_info
+
     with Image.open(io.BytesIO(img_bytes)) as img:
         meta["format"] = img.format
         meta["mode"] = img.mode
         meta["size"] = img.size
+        # prefer to set mime_guess from PIL format
+        if img.format:
+            meta["mime_guess"] = f"image/{img.format.lower()}"
         info_serializable = {}
         for k, v in img.info.items():
             if isinstance(v, (bytes, bytearray)):
@@ -211,9 +362,19 @@ def read_image_from_bytes(img_bytes: bytes) -> Dict[str, Any]:
                 # keep_payload=True so we can fully parse APP1 and APP2; we'll remove raw bytes before returning.
                 meta["jpeg_app_segments"] = parse_jpeg_app_segments(img_bytes, wanted=(1,2,11,13), keep_payload=True)
 
+                # --- FULL marker scan for SOF/DQT/DHT/DRI/COM and segment order/multiplicity ---
+                meta["jpeg_markers"] = parse_jpeg_markers_full(img_bytes)
+                # multiplicity summary
+                counts: Dict[str, int] = {}
+                for m in meta["jpeg_markers"]:
+                    counts[m.get("name", "UNK")] = counts.get(m.get("name", "UNK"), 0) + 1
+                meta["marker_counts"] = counts
+
                 # --- FULL parsing for APP1 and APP2 using piexif / ImageCms ---
                 # APP1: EXIF and/or XMP
                 app1_entries = meta["jpeg_app_segments"].get("APP1", [])
+                maker_notes_present = False
+                thumbnail_evidence = {}
                 for e in app1_entries:
                     payload = e.pop("payload", None)
                     # remove hex payload_head after parsing (user requested no hex payload printed)
@@ -227,8 +388,22 @@ def read_image_from_bytes(img_bytes: bytes) -> Dict[str, Any]:
                         parsed["contains"] = parsed.get("contains", []) + ["EXIF"]
                         if piexif:
                             try:
-                                # parse with piexif and normalize (thumbnail data will be omitted)
+                                # parse with piexif and normalize (thumbnail data will be omitted in normalized output)
                                 exif_dict = piexif.load(payload)
+                                # record maker note presence/offset info (tag 37500 / 'MakerNote')
+                                # piexif returns tags by IFD name; check 'Exif' IFD for MakerNote tag
+                                try:
+                                    exif_ifd = exif_dict.get("Exif", {})
+                                    if 37500 in exif_ifd:
+                                        maker_notes_present = True
+                                        parsed["maker_note_present"] = True
+                                    # thumbnail bytes exist under exif_dict.get('thumbnail')
+                                    thumb = exif_dict.get("thumbnail")
+                                    if thumb:
+                                        th_hash = hashlib.sha256(thumb).hexdigest()
+                                        thumbnail_evidence = {"thumbnail_len": len(thumb), "thumbnail_sha256": th_hash}
+                                except Exception:
+                                    pass
                                 parsed["exif_parsed"] = _normalize_piexif_dict(exif_dict)
                             except Exception as exc:
                                 parsed["exif_parsed_error"] = str(exc)
@@ -251,6 +426,11 @@ def read_image_from_bytes(img_bytes: bytes) -> Dict[str, Any]:
                         parsed["contains"] = ["APP1-unknown"]
                         parsed["ascii_preview"] = _bytes_to_printable(payload, 256)
                     e["parsed"] = parsed
+
+                if maker_notes_present:
+                    meta.setdefault("forensic", {})["maker_notes_present"] = True
+                if thumbnail_evidence:
+                    meta.setdefault("forensic", {})["thumbnail"] = thumbnail_evidence
 
                 # APP2: ICC_PROFILE and MPF handling (may be split across multiple APP2 segments)
                 app2_entries = meta["jpeg_app_segments"].get("APP2", [])
@@ -329,6 +509,35 @@ def read_image_from_bytes(img_bytes: bytes) -> Dict[str, Any]:
                     for e in meta["jpeg_app_segments"].get(nm, []):
                         e.pop("payload_head", None)
 
+                # Conflict checks (dates/software/GPS)
+                try:
+                    exif_top = meta.get("jpeg_app_segments", {}).get("APP1", [])
+                    # find first EXIF parsed if present
+                    exif_parsed = None
+                    for e in app1_entries:
+                        p = e.get("parsed", {})
+                        if p and p.get("exif_parsed"):
+                            exif_parsed = p["exif_parsed"]
+                            break
+                    conflicts = []
+                    if exif_parsed:
+                        # DateTimeOriginal vs DateTimeDigitized vs DateTime
+                        d_orig = exif_parsed.get("Exif", {}).get("DateTimeOriginal")
+                        d_dig = exif_parsed.get("Exif", {}).get("DateTimeDigitized")
+                        d_file = meta.get("exif", {}).get("DateTime")
+                        if d_orig and d_dig and d_orig != d_dig:
+                            conflicts.append("DateTimeOriginal != DateTimeDigitized")
+                        if d_orig and d_file and not d_orig.startswith(d_file.split(" ")[0]):
+                            conflicts.append("DateTimeOriginal date != File DateTime")
+                        # GPS presence check
+                        gps_present = "GPS" in exif_parsed and exif_parsed["GPS"]
+                        if gps_present and "GPSInfo" not in meta.get("exif", {}):
+                            conflicts.append("GPS parsed but GPSInfo missing in top-level EXIF")
+                    if conflicts:
+                        meta.setdefault("forensic", {})["conflicts"] = conflicts
+                except Exception:
+                    pass
+
             except Exception:
                 meta["jpeg_app_segments"] = {}
         
@@ -349,6 +558,15 @@ def _normalize_piexif_dict(exif_dict) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     if not piexif:
         return _make_json_serializable(exif_dict)
+
+    # thumbnail hash/size detection (thumbnail stored separately in exif_dict['thumbnail'])
+    thumb = exif_dict.get("thumbnail")
+    if thumb:
+        try:
+            out["_thumbnail_sha256"] = hashlib.sha256(thumb).hexdigest()
+            out["_thumbnail_length"] = len(thumb)
+        except Exception:
+            pass
 
     for ifd, tags in exif_dict.items():
         # skip thumbnail IFD entirely to avoid printing binary thumbnail data

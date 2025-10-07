@@ -40,3 +40,105 @@
 .read-the-docs {
   color: #888;
 }
+
+/* --- Cards / layout --- */
+.meta-card {
+  border: 1px solid #e5e7eb;        /* slate-200 */
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  margin-top: 16px;
+}
+
+/* --- Section titles --- */
+.meta-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #0f172a;                    /* slate-900 */
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9); /* subtle bar */
+  border-bottom: 1px solid #e2e8f0;
+  letter-spacing: .2px;
+}
+
+.meta-title::before {
+  content: "";
+  width: 6px;
+  height: 14px;
+  border-radius: 3px;
+  background: #3b82f6;               /* brand accent */
+  box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+}
+
+/* --- Key/value rows --- */
+.meta-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.meta-row:first-child { border-top: 0; }
+
+.meta-label {
+  font-weight: 600;
+  color: #334155;                    /* slate-700 */
+  text-transform: none;
+}
+
+.meta-value {
+  color: #0f172a;
+  word-break: break-word;
+}
+
+/* Make hashes/arrays look nice */
+.meta-value code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.88rem;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 3px 6px;
+}
+
+/* Small badges for booleans or units */
+.meta-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #dbeafe;
+}
+
+/* Hover highlight */
+.meta-row:hover {
+  background: #fcfcfd;
+}
+
+/* Responsive tweak */
+@media (max-width: 640px) {
+  .meta-row { grid-template-columns: 1fr; }
+  .meta-label { color: #64748b; }     /* slate-500 on mobile */
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .meta-card { background: #0b1020; border-color: #1f2937; }
+  .meta-title { background: linear-gradient(180deg, #0f172a, #0b1220); color: #e5e7eb; border-bottom-color: #1f2937; }
+  .meta-title::before { background: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,.15); }
+  .meta-row { border-top-color: #111827; }
+  .meta-label { color: #cbd5e1; }
+  .meta-value { color: #e5e7eb; }
+  .meta-value code { background: #0f172a; border-color: #1f2937; color: #e5e7eb; }
+  .meta-badge { background: #0b1b33; color: #93c5fd; border-color: #0d2a57; }
+  .meta-row:hover { background: #0a0f1e; }
+}
+
