@@ -29,8 +29,14 @@ export default function Second() {
 
     const isJpegMime = /image\/jpeg/i.test(f.type);
     const isJpegExt = /\.jpe?g$/i.test(f.name);
-    if (!isJpegMime && !isJpegExt) {
-      setError("Please select a JPEG image.");
+    const isPngMime = /image\/png/i.test(f.type);
+    const isPngExt = /\.png$/i.test(f.name);
+
+    const isJpeg = isJpegMime || isJpegExt;
+    const isPng = isPngMime || isPngExt;
+
+    if (!isJpeg && !isPng) {
+      setError("Please select a JPEG or PNG image.");
       setFile(null);
       return;
     }
@@ -51,7 +57,10 @@ export default function Second() {
       setStatus("Analyzing...");
 
       const formData = new FormData();
-      const safeName = /\.jpe?g/i.test(file.name) ? file.name : `${file.name}.jpg`;
+      let safeName = file.name;
+      if (!/\.jpe?g$/i.test(safeName) && !/\.png$/i.test(safeName)) {
+        safeName = /image\/png/i.test(file.type) ? `${safeName}.png` : `${safeName}.jpg`;
+      }
       formData.append("file", file, safeName);
 
       const res = await fetch("http://localhost:8000/analyze", { method: "POST", body: formData });
@@ -70,10 +79,10 @@ export default function Second() {
 
   return (
     <div className="container">
-      <h2>Second Page</h2>
-      <p>Pick a JPEG and analyze it with the Python backend.</p>
+      <h2>Upload Image</h2>
+      <p>Pick a JPEG or PNG analyze it with the Python backend.</p>
 
-      <input type="file" accept="image/jpeg,image/jpg" onChange={onPick} />
+      <input type="file" accept="image/jpeg,image/jpeg,image/png" onChange={onPick} />
 
       {error && <div role="alert" style={{ color: "crimson", marginTop: 8 }}>{error}</div>}
 

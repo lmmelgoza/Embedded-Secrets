@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <div className="container">
       <button className="primary-btn" onClick={() => navigate("/second")}>
-        Go to Second Page
+        Upload & Analyze Image
       </button>
     </div>
   );
