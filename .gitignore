@@ -27,4 +27,5 @@ backend/__pycache__/app.cpython-38.pyc
 backend/__pycache__/organize_meta.cpython-38.pyc
 backend/__pycache__/organize_png_meta.cpython-38.pyc
 backend/__pycache__/png_read.cpython-38.pyc
-backend/__pycache__/image_read.cpython-38.pyc
+backend/__pycache__/image_read.cpython-38.pyc__pycache__/
+*.pyc
