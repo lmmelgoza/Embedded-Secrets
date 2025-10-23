@@ -28,6 +28,35 @@ function Row({ label, value }) {
   );
 }
 
+function JpegAppSegments({ meta }) {
+  const segs = meta?.jpeg_app_segments;
+  if (!segs) return null;
+  return (
+    <section>
+      <h3>JPEG APP segments</h3>
+      {Object.entries(segs).map(([name, list]) => (
+        <div key={name}>
+          <h4>{name}</h4>
+          {list.map((e, i) => (
+            <div key={i} style={{ paddingLeft: 12, marginBottom: 8 }}>
+              <div>
+                <strong>offset:</strong> {e.offset} &nbsp;
+                <strong>length:</strong> {e.length} &nbsp;
+                <strong>type:</strong> {e.type || "-"}
+              </div>
+              {e.payload_head_parsed && (
+                <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>
+                  {JSON.stringify(e.payload_head_parsed, null, 2 )}
+                </pre>
+              )}
+              </div>
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 const formatBytes = (n) => {
   if (n == null) return "";
   const units = ["B", "kB", "MB", "GB"];
@@ -185,6 +214,8 @@ const isPNG =
           <Row label="icc description" value={iccDesc} />
         </Section>
       )}
+      {/* JPEG APP segments (shows payload_head_parsed) */}
+      {/*!isPNG && <JpegAppSegments meta={data} />*/}
 
       {/* Forensics (JPEG)*/}
       {!isPNG && (
