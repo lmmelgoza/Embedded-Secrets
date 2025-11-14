@@ -6,6 +6,7 @@ import { Routes, Route } from "react-router-dom";
 import Header from "./Header";
 import Home from "./Home";
 import Second from "./Second";
+import ExtractEmbed from "./Extract_Embed";
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/second" element={<Second />} />
+        <Route path="/extract_embed" element={<ExtractEmbed />} />
       </Routes>
     </>
   )
