@@ -7,6 +7,7 @@ export default function Home() {
       <button className="primary-btn" onClick={() => navigate("/second")}>
         Upload & Analyze Image
       </button>
+      
       <button className="primary-btn" onClick={() => navigate("/extract_embed")}>
         Embed/Extract Secret Message
       </button>

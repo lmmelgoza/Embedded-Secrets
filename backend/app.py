@@ -6,9 +6,11 @@ import json
 #JPEG
 import image_read as ir
 from organize_meta import organize_meta
+
 #PNG
 import png_read as pr
 from organize_png_meta import organize_meta as organize_png_meta
+
 
 app = FastAPI()
 
