@@ -22,6 +22,7 @@ from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import scrypt
 import cv2
+import json
 
 MAGIC = b'PD1'           # PNG DCT v1
 SALT_LEN = 16
@@ -226,12 +227,13 @@ def embed(in_path: str, out_path: str, plaintext: str, password: str, coeffs_per
     header_bytes = MAGIC + struct.pack(">I", length) + struct.pack(">H", coeffs_final)
     header_bits = _bytes_to_bits(header_bytes)
 
-    print("SEED:", seed)
-    print("NUM_BLOCKS:", num_blocks)
-    print("HEADER BYTES:", header_len_bytes)
-    print("CHOSEN coeffs_per_block:", coeffs_final)
-    print("CAPACITY (bits) for payload after header reservation:", len(positions_payload))
-    print("USING DELTA:", DELTA)
+    # informational JSON lines (previously printed human-readable lines)
+    print(json.dumps({"seed": seed}))
+    print(json.dumps({"num_blocks": int(num_blocks)}))
+    print(json.dumps({"header_bytes": int(header_len_bytes)}))
+    print(json.dumps({"chosen_coeffs_per_block": int(coeffs_final)}))
+    print(json.dumps({"capacity_bits_after_header": int(len(positions_payload))}))
+    print(json.dumps({"delta": float(DELTA)}))
 
     # embed header bits into header_positions (row-major order)
     Yw = Y.copy()
@@ -270,13 +272,18 @@ def embed(in_path: str, out_path: str, plaintext: str, password: str, coeffs_per
     if not ok:
         raise ValueError(f"Failed to write output: {out_path}")
 
-    print(f"Embedded {len(plaintext)} bytes (ciphertext {length} bytes) into {out_path}")
+    # output JSON lines similar to JPEG_Embed
+    print(json.dumps({"input_path": in_path}))
+    print(json.dumps({"output_path": out_path}))
+    print(json.dumps({"bytes_embedded": len(plaintext)}))
+    # optionally include ciphertext length for debugging
+    # print(json.dumps({"ciphertext_bytes": length}))
 
     # --- verification step: read packed bytes back and compare to original ---
     try:
         packed_read = _read_packed_from_image(out_path, password, coeffs_per_block=coeffs_final)
     except Exception as e:
-        print("Warning: verification read failed:", e)
+        print(json.dumps({"warning": str(e)}))
         return
 
     if packed_read != payload_enc:
@@ -296,14 +303,17 @@ def embed(in_path: str, out_path: str, plaintext: str, password: str, coeffs_per
                         bit_diffs += 1
                         if first_mismatch is None:
                             first_mismatch = (i, 7 - bitpos)  # MSB-first report
-        print("Verification failed: embedded packed payload differs from original.")
-        print(f"Byte diffs: {byte_diffs}, Bit diffs (within overlapped bytes): {bit_diffs}")
-        if first_mismatch is not None:
-            print(f"First differing bit: byte index {first_mismatch[0]}, bit {first_mismatch[1]} (MSB=7..LSB=0)")
-        print("Suggestion: Increase DELTA (e.g. to 12 or 16) or use repetition/ECC for robustness.")
+        # emit structured diagnostics then raise
+        print(json.dumps({
+            "verification_failed": True,
+            "byte_diffs": int(byte_diffs),
+            "bit_diffs": int(bit_diffs),
+            "first_mismatch": first_mismatch
+        }))
+        print(json.dumps({"suggestion": "Increase DELTA (e.g. to 12 or 16) or use repetition/ECC for robustness."}))
         raise ValueError("Stego verification failed: extracted packed payload != original")
     else:
-        print("Verification: packed payload matches original (AES-GCM decrypt should succeed).")
+        print(json.dumps({"verification": "ok", "note": "packed payload matches original (AES-GCM decrypt should succeed)"}))
 
 def extract(stego_path: str, password: str, coeffs_per_block: int = None) -> str:
     img = cv2.imread(stego_path, cv2.IMREAD_COLOR)
@@ -321,8 +331,8 @@ def extract(stego_path: str, password: str, coeffs_per_block: int = None) -> str
     if header_bits_needed > len(header_positions):
         raise ValueError("File capacity too small or not stego (header missing)")
 
-    print("SEED:", seed)
-    print("USING DELTA:", DELTA)
+    print(json.dumps({"seed": seed}))
+    print(json.dumps({"delta": float(DELTA)}))
 
     # Read header bits from fixed header positions
     bits_read = []
@@ -457,7 +467,7 @@ if __name__ == "__main__":
         if len(sys.argv) >= 5:
             coeffs = int(sys.argv[4])
         txt = extract(infile, password, coeffs_per_block=coeffs)
-        print("Recovered plaintext:", txt)
+        print(json.dumps({"message": f"Recovered plaintext: {txt}"}))
 
     else:
         print("Mode must be 'embed' or 'extract'")

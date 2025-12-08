@@ -19,7 +19,7 @@ export default function Second() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // Select and validate JPEG
+  // Select and validate JPEG/PNG
   const onPick = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -78,11 +78,18 @@ export default function Second() {
   };
 
   return (
-    <div className="container">
+    <div
+      className="container"
+      style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", textAlign: "center" }}
+    >
       <h2>Upload Image</h2>
-      <p>Pick a JPEG or PNG analyze it with the Python backend.</p>
+      <p>Pick a JPEG or PNG and analyze it with the Python backend.</p>
 
-      <input type="file" accept="image/jpeg,image/jpeg,image/png" onChange={onPick} />
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        onChange={onPick}
+      />
 
       {error && <div role="alert" style={{ color: "crimson", marginTop: 8 }}>{error}</div>}
 
@@ -92,14 +99,14 @@ export default function Second() {
         </div>
       )}
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, width: "100%", display: "flex", justifyContent: "center" }}>
         <button onClick={analyze} disabled={!file}>Analyze</button>
         {status && <span role="status" style={{ marginLeft: 10 }}>{status}</span>}
       </div>
 
       {result && <MetadataViewer data={result} />}
 
-      <div style={{ marginTop: 16 }}>
+      <div style={{ marginTop: 16, width: "100%", display: "flex", justifyContent: "center" }}>
         <Link to="/" className="link-btn">Back to Home</Link>
       </div>
     </div>

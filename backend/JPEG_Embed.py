@@ -7,6 +7,7 @@ from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import scrypt
 import jpegio as jio
+import json
 
 MAGIC = b'JH1'
 SALT_LEN = 16
@@ -17,6 +18,7 @@ BOUNDARIES = {1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047}
 
 def _derive_key(password: str, salt: bytes) -> bytes:
     return scrypt(password.encode("utf-8"), salt, 32, N=2**15, r=8, p=1)
+
 def encrypt_bytes(plaintext: bytes, password: str) -> bytes:
     salt = get_random_bytes(SALT_LEN)
     key = _derive_key(password, salt)
@@ -108,8 +110,9 @@ def embed(in_jpeg_path: str, out_jpeg_path: str, plaintext: str, password: str):
     if bits.size > len(positions):
         raise ValueError(f"Payload too large to embed in the given JPEG image: need {bits.size} bits, capacity {len(positions)}.")
     
-    print("SEED:", _seed_from_password(password))
-    print("CAPACITY:", len(_collect_positions(jpeg, _seed_from_password(password))))
+    #print("SEED:", _seed_from_password(password))
+    #print("CAPACITY:", len(_collect_positions(jpeg, _seed_from_password(password))))
+    capacity = len(positions)
 
     idx = 0
     written = 0
@@ -129,31 +132,24 @@ def embed(in_jpeg_path: str, out_jpeg_path: str, plaintext: str, password: str):
     if written < bits.size:
         raise ValueError(f"Not enough safe coefficients (wrote {written}/{bits.size} bits).")
 
-    #for i, bit in enumerate(bits):
-    #    comp_idx, by, bx, k = positions[i]
-    #    block = jpeg.coef_arrays[comp_idx][by*8:(by+1)*8, bx*8:(bx+1)*8]
-    #    flat = block.flatten()
-    #    val = int(flat[k])
-    #    sign = -1 if val < 0 else 1
-    #    a = abs(val)
-    #    if (a & 1)  != int(bit):
-    #        if a == 0:
-    #            a = 1
-    #        else:
-    #            a = a + 1 if a < 2047 else a - 1
-    #    flat[k] = sign * a
-    #    jpeg.coef_arrays[comp_idx][by*8:(by+1)*8, bx*8:(bx+1)*8] = flat.reshape(8, 8)
 
     jio.write(jpeg, out_jpeg_path)
-    print(f"Embedded {len(plaintext)} bytes (ciphertext {length} bytes) into {out_jpeg_path}")
+    #print(f"Embedded {len(plaintext)} bytes (ciphertext {length} bytes) into {out_jpeg_path}")
+
+    return {
+        "input_path": in_jpeg_path,
+        "output_path": out_jpeg_path,
+        "bytes_embedded": len(plaintext),
+        "ciphertext_bytes": length,
+    }
 
 def extract(stego_jpeg_path: str, password: str) -> str:
     jpeg = jio.read(stego_jpeg_path)
     seed = _seed_from_password(password)
     positions = _collect_positions(jpeg, seed)
 
-    print("SEED:", _seed_from_password(password))
-    print("CAPACITY:", len(_collect_positions(jpeg, _seed_from_password(password))))
+    #print("SEED:", _seed_from_password(password))
+    #print("CAPACITY:", len(_collect_positions(jpeg, _seed_from_password(password))))
 
 
     header_bits_needed = 7 * 8
@@ -209,7 +205,10 @@ if __name__ == "__main__":
         outfile = sys.argv[3]
         message = sys.argv[4]
         password = sys.argv[5]
-        embed(infile, outfile, message, password)
+        result = embed(infile, outfile, message, password)
+        print(json.dumps({"input_path": result["input_path"]}))
+        print(json.dumps({"output_path": result["output_path"]}))
+        print(json.dumps({"bytes_embedded": result["bytes_embedded"]}))
 
     elif mode == "extract":
         if len(sys.argv) < 4:
@@ -217,7 +216,7 @@ if __name__ == "__main__":
         infile = sys.argv[2]
         password = sys.argv[3]
         txt = extract(infile, password)
-        print("Recovered plaintext:", txt)
+        print(json.dumps({"message": f"Recovered plaintext: {txt}"}))
 
     else:
         print("Mode must be 'embed' or 'extract'")
