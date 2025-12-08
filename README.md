@@ -40,6 +40,7 @@ Steps to Run Application on WSL
 # install dependencies and run dev server
  - npm install
  - npm run dev
+ - Press "o" then enter to start frontend in your browser
 # install required python packages
  - cd backend
  - python3 -m venv venv
@@ -47,6 +48,6 @@ Steps to Run Application on WSL
  - python -m pip install --upgrade pip
  - pip install fastapi uvicorn[standard] python-multipart pillow piexif
  - For further pip installations look at backend/requirements.txt
-# run backend on port 8000
+# run backend on port 8000 (separate terminal)
 - uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
