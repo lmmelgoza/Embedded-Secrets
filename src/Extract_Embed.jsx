@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function ExtractEmbed() {
+    const navigate = useNavigate();
     const [operation, setOperation] = useState("extract");
     const [file, setFile] = useState(null);
     const [message, setMessage] = useState("");
@@ -54,9 +56,6 @@ export default function ExtractEmbed() {
         fd.append("password", password);
         if (operation === "embed") fd.append("message", message);
 
-        // clear the UI input fields now that the form data contains their values
-        resetFields();
-
         try {
             const res = await fetch("http://localhost:8000/api/secret", {
                 method: "POST",
@@ -66,34 +65,27 @@ export default function ExtractEmbed() {
             const text = await res.text();
             const data = parseJsonLines(text);
 
-            // prefer using the uploaded filename for input_path when available
-            if (data && file && file.name) {
-                data.input_path = data.input_path ?? file.name;
-            }
-
             if (data?.stego_image_b64) setStegoB64(data.stego_image_b64);
-
             setParsedData(data);
 
             if (!res.ok) {
                 const errMsg = data?.detail ?? data?.error ?? text ?? `HTTP ${res.status}`;
                 setResult("Error: " + errMsg);
             } else {
-                if (data) {
-                    if (operation === "embed") {
-                        const outPath = data.output_path ?? null;
-                        const bytes = data.bytes_embedded ?? null;
-                        setResult(
-                            `Embedded successfully.` +
-                            (outPath ? ` Output: ${outPath}` : "") +
-                            (bytes !== null ? ` (${bytes} bytes embedded)` : "")
-                        );
-                    } else {
-                        const msg = data.message ?? data.extracted ?? null;
-                        setResult((msg ? msg : (data.result_message ?? "Extracted successfully.")));
-                    }
+                // Clear fields ONLY on success
+                resetFields();
+
+                if (operation === "embed") {
+                    const outPath = data.output_path ?? null;
+                    const bytes = data.bytes_embedded ?? null;
+                    setResult(
+                        `Embedded successfully.` +
+                        (outPath ? ` Output: ${outPath}` : "") +
+                        (bytes !== null ? ` (${bytes} bytes embedded)` : "")
+                    );
                 } else {
-                    setResult("Success (no JSON returned): " + (text || ""));
+                    const msg = data.message ?? data.extracted ?? null;
+                    setResult((msg ? msg : (data.result_message ?? "Extracted successfully.")));
                 }
             }
         } catch (err) {
@@ -272,7 +264,7 @@ export default function ExtractEmbed() {
             )}
 
             <div style={{ marginTop: "auto", padding: 16, textAlign: "center" }}>
-                <button onClick={() => (window.location.href = "/")}>Back to Home</button>
+                <button onClick={() => navigate("/")}>Back to Home</button>
             </div>
         </div>
     );

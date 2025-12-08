@@ -1,8 +1,9 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import MetadataViewer from "./MetadataViewer";
 
 export default function Second() {
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
@@ -83,7 +84,7 @@ export default function Second() {
       style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", textAlign: "center" }}
     >
       <h2>Upload Image</h2>
-      <p>Pick a JPEG or PNG and analyze it with the Python backend.</p>
+      <p>Pick a JPEG or PNG and analyze it.</p>
 
       <input
         type="file"
@@ -107,7 +108,7 @@ export default function Second() {
       {result && <MetadataViewer data={result} />}
 
       <div style={{ marginTop: 16, width: "100%", display: "flex", justifyContent: "center" }}>
-        <Link to="/" className="link-btn">Back to Home</Link>
+        <button onClick={() => navigate("/")} style={{ padding: "8px 16px" }}>Back to Home</button>
       </div>
     </div>
   );
