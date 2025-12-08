@@ -2,33 +2,27 @@
 CSCI 490 Capstone Project
 🖼️ Image Metadata & Steganography Web App
 
-A React + FastAPI web application for exploring images, powered by Firebase for auth & storage. Upload a photo, inspect its metadata (EXIF/GPS), detect/extract hidden messages, and embed your own data into images.
+A React + FastAPI web application for exploring images. Upload a photo, inspect its metadata (EXIF/GPS), detect/extract hidden messages, and embed your own data into images.
 
 Features
 
-Metadata Extraction: Read EXIF (capture time, camera model), GPS, and PNG text chunks.
+Metadata Extraction: Scan JPEG and PNG files to retrieve embedded metadata such as GPS coordinates, creation/modification timestamps, and other header-level attributes
 
-Steganography Detection: Extract hidden bytes/messages (e.g., LSB).
+Steganographic Embedding: Embed custom metadata of payloads from stego images using password-protected decryption.
 
-Data Embedding: Hide custom text/data in images.
+Secure Extraction: Extract embedded metadata or payloads from stego images using password-protected decryption.
 
-User Accounts: Firebase Authentication (Email/Password, OAuth).
+RS Steganalysis: Perform RS (Regular-Singular) analysis to identify potential DCT-based embedding by flipping pixel or coefficient groups and generating a suspicion score
 
-Storage: Upload original/processed images to Firebase Storage.
-
-History: Save extraction/embedding results (via Firestore or your DB of choice).
+History: Save extraction/embedding results (via download JSON file).
 
 Tech Stack
 
 Frontend: React
 
-Backend: Python FastAPI (image I/O, stego, crypto)
+Backend: Python FastAPI 
 
-Firebase: Auth, Storage, (Firestore for history/logs)
-
-Core Python libs: Pillow, NumPy, piexif (metadata), optional opencv-python, cryptography
-
-Architecture (FastAPI × Firebase mix)
+Core Python libs: Pillow, NumPy, piexif (metadata), opencv-python, cryptography
 
 React handles file uploads and displays results.
 
