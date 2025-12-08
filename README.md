@@ -45,7 +45,8 @@ Steps to Run Application on WSL
  - python3 -m venv venv
  - source venv/bin/activate
  - python -m pip install --upgrade pip
- - pip install fastapi uvicorn[standard] python-multpart pillow piexif
+ - pip install fastapi uvicorn[standard] python-multipart pillow piexif
+ - For further pip installations look at backend/requirements.txt
 # run backend on port 8000
 - uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
