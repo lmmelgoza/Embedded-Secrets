@@ -175,25 +175,51 @@ def rs_suspicion_score(Rp, Sp, Rm, Sm) -> float:
     diff = abs((Rp - Sp) - (Rm - Sm))
     return diff / total
 
-
-def analyze_jpeg(path: str):
+def analyze_jpeg_dict(path: str):
+    """
+    Run RS analysis on a JPEG file and return a structured result
+    instead of printing to stdout.
+    """
     jpeg = jio.read(path)
     coeffs = get_ac_sequence(jpeg, restrict_mid_freq=True)
 
+    # Reliability flag similar to the PNG version
+    reliability = "normal"
     if len(coeffs) < GROUP_SIZE * 100:
-        print("Warning: very few usable coefficients; results may be unreliable.")
+        reliability = "low"
 
     Rp, Sp, Rm, Sm, Up, Um = rs_analysis(coeffs, group_size=GROUP_SIZE)
     score = rs_suspicion_score(Rp, Sp, Rm, Sm)
 
-    print(f"File: {path}")
-    print(f"Total groups (used): {Rp + Sp + Up}")  # per F+ (same as per F-)
-    print(f"R+ = {Rp}, S+ = {Sp}, U+ = {Up}")
-    print(f"R- = {Rm}, S- = {Sm}, U- = {Um}")
-    print(f"Suspicion score (0 = clean-looking, higher = more suspicious): {score:.6f}")
+    # Same rough threshold as your CLI function
+    verdict = "suspicious" if score > 0.01 else "likely_clean"
 
-    # Very rough rule-of-thumb threshold (you would tune this on a dataset!)
-    if score > 0.01:
+    return {
+        "total_groups": int(Rp + Sp + Up),  # same as what you print
+        "R_plus": int(Rp),
+        "S_plus": int(Sp),
+        "U_plus": int(Up),
+        "R_minus": int(Rm),
+        "S_minus": int(Sm),
+        "U_minus": int(Um),
+        "score": float(score),
+        "verdict": verdict,
+        "reliability": reliability,
+    }
+
+def analyze_jpeg(path: str):
+    result = analyze_jpeg_dict(path)
+
+    print(f"File: {path}")
+    print(f"Total groups (used): {result['total_groups']}")
+    print(f"R+ = {result['R_plus']}, S+ = {result['S_plus']}, U+ = {result['U_plus']}")
+    print(f"R- = {result['R_minus']}, S- = {result['S_minus']}, U- = {result['U_minus']}")
+    print(
+        "Suspicion score (0 = clean-looking, higher = more suspicious): "
+        f"{result['score']:.6f}"
+    )
+
+    if result["verdict"] == "suspicious":
         print("Result: Image looks SUSPICIOUS (possible DCT LSB stego).")
     else:
         print("Result: Image looks LIKELY CLEAN (no strong RS evidence of DCT stego).")

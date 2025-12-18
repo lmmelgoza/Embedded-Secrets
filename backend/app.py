@@ -19,12 +19,13 @@ import io
 import image_read as ir
 from organize_meta import organize_meta
 import JPEG_Embed as jpeg_embed
-import PNG_Embed as png_embed
-
+from rs_jpeg_detector import analyze_jpeg_dict
 
 #PNG
 import png_read as pr
 from organize_png_meta import organize_meta as organize_png_meta
+from rs_png_detector import analyze_png_dict
+import PNG_Embed as png_embed
 
 
 app = FastAPI()
@@ -230,6 +231,42 @@ async def secret_api(
         except Exception:
             pass
 
+@app.post("/rs-analyze")
+async def rs_analyze(file: UploadFile = File(...)):
+    data = await file.read()
+    kind = sniff_format(data)
+
+    if kind not in ("JPEG", "PNG"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPEG and PNG are supported for RS analysis.",
+        )
+
+    suffix = ".jpg" if kind == "JPEG" else ".png"
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+
+        if kind == "JPEG":
+            rs_result = analyze_jpeg_dict(path)
+        else:
+            rs_result = analyze_png_dict(path)
+
+        return {
+            "status": "ok",
+            "format": kind,
+            "filename": file.filename,
+            "rs": rs_result,
+        }
+    finally:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

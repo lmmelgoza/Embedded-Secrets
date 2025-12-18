@@ -10,7 +10,7 @@ Minimal RS steganalysis-style detector for PNG (spatial / pixel domain).
 
 This is a *heuristic* detector aimed at LSB-type spatial stego in lossless images
 (like classic LSB replacement/LSB matching in PNG). It will not be perfect, but
-it’s a solid proof-of-concept, analogous to the JPEG DCT version.
+it's a solid proof-of-concept, analogous to the JPEG DCT version.
 """
 
 import sys
@@ -160,24 +160,44 @@ def rs_suspicion_score(Rp, Sp, Rm, Sm) -> float:
     diff = abs((Rp - Sp) - (Rm - Sm))
     return diff / total
 
-
-def analyze_png(path: str):
+def analyze_png_dict(path: str):
     samples = get_pixel_sequence(path)
 
+    reliability = "normal"
     if len(samples) < GROUP_SIZE * 100:
-        print("Warning: very few usable samples; results may be unreliable.")
+        reliability = "low"
 
     Rp, Sp, Rm, Sm, Up, Um = rs_analysis(samples, group_size=GROUP_SIZE)
     score = rs_suspicion_score(Rp, Sp, Rm, Sm)
 
-    print(f"File: {path}")
-    print(f"Total groups (used): {Rp + Sp + Up}")  # per F+ (same as per F-)
-    print(f"R+ = {Rp}, S+ = {Sp}, U+ = {Up}")
-    print(f"R- = {Rm}, S- = {Sm}, U- = {Um}")
-    print(f"Suspicion score (0 = clean-looking, higher = more suspicious): {score:.6f}")
+    verdict = "suspicious" if score > 0.01 else "likely_clean"
 
-    # Same rough rule-of-thumb threshold as the JPEG version
-    if score > 0.01:
+    return {
+        "total_groups": Rp + Sp + Up,
+        "R_plus": Rp,
+        "S_plus": Sp,
+        "U_plus": Up,
+        "R_minus": Rm,
+        "S_minus": Sm,
+        "U_minus": Um,
+        "score": score,
+        "verdict": verdict,
+        "reliability": reliability,
+    }
+
+def analyze_png(path: str):
+    result = analyze_png_dict(path)
+
+    print(f"File: {path}")
+    print(f"Total groups (used): {result['total_groups']}")
+    print(f"R+ = {result['R_plus']}, S+ = {result['S_plus']}, U+ = {result['U_plus']}")
+    print(f"R- = {result['R_minus']}, S- = {result['S_minus']}, U- = {result['U_minus']}")
+    print(
+        "Suspicion score (0 = clean-looking, higher = more suspicious): "
+        f"{result['score']:.6f}"
+    )
+
+    if result["verdict"] == "suspicious":
         print("Result: Image looks SUSPICIOUS (possible spatial LSB stego).")
     else:
         print("Result: Image looks LIKELY CLEAN (no strong RS evidence of spatial LSB stego).")
