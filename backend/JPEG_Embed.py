@@ -16,32 +16,66 @@ TAG_LEN = 16
 
 BOUNDARIES = {1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047}
 
+# Derive a 32-byte AES key from a password and salt using scrypt.
+# Steps:
+# 1. Encode the password as UTF-8 bytes.
+# 2. Run the scrypt KDF with fixed parameters to obtain a 32-byte key.
 def _derive_key(password: str, salt: bytes) -> bytes:
     return scrypt(password.encode("utf-8"), salt, 32, N=2**15, r=8, p=1)
 
+
+# Encrypt arbitrary bytes with a password using AES-GCM, returning a packed blob.
+# Steps:
+# 1. Generate a random SALT and NONCE.
+# 2. Derive the AES key from the password and SALT.
+# 3. Initialize an AES-GCM cipher with the derived key and NONCE.
+# 4. Encrypt the plaintext and compute the authentication TAG.
+# 5. Concatenate SALT || NONCE || TAG || ciphertext and return it.
 def encrypt_bytes(plaintext: bytes, password: str) -> bytes:
+    # Step 1
     salt = get_random_bytes(SALT_LEN)
-    key = _derive_key(password, salt)
     nonce = get_random_bytes(NONCE_LEN)
+    # Step 2
+    key = _derive_key(password, salt)
+    # Step 3
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    # Step 4
     ct, tag = cipher.encrypt_and_digest(plaintext)
     return salt + nonce + tag + ct
 
+
+# Decrypt bytes produced by encrypt_bytes using the same password.
+# Steps:
+# 1. Split the packed blob into SALT, NONCE, TAG, and ciphertext.
+# 2. Derive the AES key from the password and SALT.
+# 3. Initialize AES-GCM and decrypt, verifying the TAG.
+# 4. Return the recovered plaintext bytes.
 def decrypt_bytes(packed: bytes, password: str) -> bytes:
+    # Step 1
     salt = packed[:SALT_LEN]
     nonce = packed[SALT_LEN:SALT_LEN + NONCE_LEN]
     tag = packed[SALT_LEN + NONCE_LEN:SALT_LEN + NONCE_LEN + TAG_LEN]
     ct = packed[SALT_LEN + NONCE_LEN + TAG_LEN:]
+    # Step 2
     key = _derive_key(password, salt)
+    # Step 3
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
     plain = cipher.decrypt_and_verify(ct, tag)
+    # Step 4
     return plain
-# a deterministic seed derived from password so that extraction only requires password
+
+# Derive a deterministic integer seed from a password.
+# Steps:
+# 1. Compute SHA-256 over the UTF-8 encoded password.
+# 2. Convert the first 8 bytes of the hash to a big-endian integer.
 def _seed_from_password(password: str) -> int:
+    # Step 1
     h = hashlib.sha256(password.encode("utf-8")).digest()
+    # Step 2
     return int.from_bytes(h[:8], "big")
 
 # bit helpers
+
 def _bytes_to_bits(b: bytes) -> np.ndarray:
     arr = np.frombuffer(b, dtype=np.uint8)
     return np.unpackbits(arr)

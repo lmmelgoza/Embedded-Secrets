@@ -11,14 +11,15 @@ import base64
 import traceback
 import subprocess
 import sys
-import JPEG_Embed as jpeg_embed
-import PNG_Embed as png_embed
+
 from concurrent.futures import ThreadPoolExecutor
 import io
 
 #JPEG
 import image_read as ir
 from organize_meta import organize_meta
+import JPEG_Embed as jpeg_embed
+import PNG_Embed as png_embed
 
 
 #PNG
@@ -42,26 +43,47 @@ app.add_middleware(
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
+# Determine the image format (PNG, JPEG or Unknown) from raw bytes
+# Steps:
+# 1. Check if the data starts with the PNG signature
+# 2. If not PNG, check if the data starts with JPEG SOI marker
+# 3. If neither, return 'UNKNOWN'
+# Returns: "PNG", "JPEG", or "UNKNOWN" based on magic bytes
 def sniff_format(data: bytes) -> str:
+    # Step 1
     if data.startswith(PNG_SIG):
         return "PNG"
+    # Step 2
     if data.startswith(b"\xff\xd8"):
         return "JPEG"
+    # Step 3
     return "UNKNOWN"
 
+# Analyze an uploaded image and return organized metadata
+# Steps:
+# 1. Read the uploaded file bytes
+# 2. Detect the image format using sniff_format
+# 3. For JPEG: decode and parse metadata with image_read + organize_meta
+#    For PNG: decode and parse metadata with png_read + organize_png_meta
+# 4. Return: JSON metadata structure or error description
 @app.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
+    # Step 1
     data = await file.read()
+    # Step 2
     kind = sniff_format(data)
 
     if kind == "JPEG":
+        # Step 3 for JPEG
         meta = ir.read_image_from_bytes(data)
         return organize_meta(meta)
     
     if kind == "PNG":
+        # Step 3 for PNG
         meta = pr.read_image_from_bytes(data)
         return organize_png_meta(meta)
 
+    # Step 4
     return {"error": "Please upload a JPEG (.jpg/.jpeg) or a PNG (.png) image."}
 
 
@@ -70,6 +92,23 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 
 executor = ThreadPoolExecutor(max_workers=4)
 
+# Embed or extract an encrypted secret message inside JPEG/PNG images
+# Steps: 
+# 1. Read the uploaded file and detect its format (JPEG/PNG)
+# 2. Choose the correct embed/extract functions and file settings based on the format
+# 3. Write the uploaded image bytes to a temporary input file
+# 4. Normalize and inspect the requested mode ("embed" or "extract")
+# 5. If mode is "embed":
+#    5.1 Validate that a non-empty message is provided
+#    5.2. Create a temporary output file path
+#    5.3. Run the embed operation in a thread pool to avoid blocking
+#    5.4. Ensure the stego output file exists.
+# 6. If mode is "extract":
+#    6.1. Run the extract operation in a thread pool
+#    6.2. Return the recovered plaintext in a JSON response
+# 7. If mode is invalid, return a 400 error response
+# 8. On any exception, log the traceback and return a 500 error
+# 9. Always clean up temporary files
 @app.post("/api/secret")
 async def secret_api(
     file: UploadFile = File(...),
@@ -77,9 +116,10 @@ async def secret_api(
     password: str = Form(...),
     message: str = Form("")
 ):
+    # Step 1
     data = await file.read()
     kind = sniff_format(data)
-
+    # Step 2
     if kind == "JPEG":
         embed_func = jpeg_embed.embed
         extract_func = jpeg_embed.extract
@@ -95,7 +135,7 @@ async def secret_api(
             status_code=400,
             content={"status": "error", "detail": "Only JPEG and PNG images are supported."}
         )
-
+    # Step 3
     in_fd, in_path = tempfile.mkstemp(suffix=suffix)
     os.close(in_fd)
     with open(in_path, "wb") as f:
@@ -103,18 +143,21 @@ async def secret_api(
 
     out_path = None
     try:
+        # Step 4
         mode_lower = mode.lower()
 
         if mode_lower == "embed":
+            # Step 5.1
             if not message:
                 return JSONResponse(
                     status_code=400,
                     content={"status": "error", "detail": "Message is required for embedding."}
                 )
+            # Step 5.2
             out_fd, out_path = tempfile.mkstemp(suffix=suffix)
             os.close(out_fd)
 
-            # run embed in thread pool to avoid blocking
+            # Step 5.3 run embed in thread pool to avoid blocking
             await asyncio.get_event_loop().run_in_executor(
                 executor,
                 embed_func,
@@ -123,10 +166,10 @@ async def secret_api(
                 message,
                 password
             )
-
+            # Step 5.4
             if not os.path.exists(out_path):
                 raise RuntimeError("Output file not created after embed.")
-
+            # Step 5.5
             with open(out_path, "rb") as f:
                 stego_bytes = f.read()
             stego_b64 = base64.b64encode(stego_bytes).decode("ascii")
@@ -144,12 +187,14 @@ async def secret_api(
             )
 
         elif mode_lower == "extract":
+            # Step 6.1
             extracted = await asyncio.get_event_loop().run_in_executor(
                 executor,
                 extract_func,
                 in_path,
                 password
             )
+            # Step 6.2
             return JSONResponse(
                 content={
                     "status": "ok",
@@ -158,12 +203,14 @@ async def secret_api(
                 }
             )
         else:
+            # Step 7
             return JSONResponse(
                 status_code=400,
                 content={"status": "error", "detail": "Mode must be 'embed' or 'extract'."}
             )
 
     except Exception as e:
+        # Step 8
         tb = traceback.format_exc()
         print("Exception in /api/secret:", tb)
         return JSONResponse(
@@ -171,6 +218,7 @@ async def secret_api(
             content={"status": "error", "detail": str(e)}
         )
     finally:
+        # Step 9
         try:
             if os.path.exists(in_path):
                 os.remove(in_path)
